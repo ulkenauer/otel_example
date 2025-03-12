@@ -1,0 +1,98 @@
+services:
+  apm-server:
+    image: elastic/apm-server:7.17.9
+    ports:
+      - "8200:8200"
+    # volumes:
+    #   - ./apm-server.yml:/usr/share/apm-server/apm-server.yml
+    environment:
+      # Настройки Elasticsearch
+      - output.elasticsearch.hosts=["elasticsearch:9200"]
+      - output.elasticsearch.ssl.enabled=false
+      
+      # Настройки Kibana
+      - apm-server.kibana.enabled=true
+      - apm-server.kibana.host=http://kibana:5601
+      - apm-server.kibana.ssl.enabled=false
+      
+      # Включение загрузки шаблонов
+      - setup.template.enabled=true
+      - apm-server.ilm.setup.enabled=true
+    #   - output.elasticsearch.hosts=["elasticsearch:9200"]
+    #   - apm-server.auth.anonymous.enabled=true # Для тестового окружения
+    networks:
+      - otel-net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+  elasticsearch:
+    image: elasticsearch:7.17.9
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - xpack.security.enabled=false
+    networks:
+      - otel-net
+    healthcheck:
+      test: 
+        [
+          "CMD-SHELL", 
+          "curl -s -I http://localhost:9200/_cluster/health || exit 1"
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.78.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - otel-net
+  kibana:
+    image: kibana:7.17.9
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTIC_APM_ACTIVE=true
+      - ELASTIC_APM_SERVER_URL=http://apm-server:8200
+    networks:
+      - otel-net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9091:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-lifecycle"
+    networks:
+      - otel-net
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - otel-net
+
+volumes:
+  grafana-storage:
+networks:
+  otel-net:
+    driver: bridge
