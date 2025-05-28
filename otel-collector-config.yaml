@@ -6,6 +6,8 @@ receivers:
 
 processors:
   batch:
+    send_batch_size: 1000
+    timeout: 10s
 
 # exporters:
 #   elasticsearch:
@@ -14,6 +16,13 @@ processors:
 #     traces_index: "traces-apm"
 #     metrics_index: "metrics-apm"
 exporters:
+  elasticsearch/logs:
+    endpoints: ["http://elasticsearch:9200"]
+    # logs_index: "logs-apm"
+    # logs_index: "logs-apm.app-fastapi-%{+yyyy.MM.dd}"
+    # logs_index: "logs-apm*"
+    logs_index: "fastapi-logs"
+    pipeline: "apm_log_correlation"
   prometheus:
     endpoint: "0.0.0.0:8889"
     namespace: fastapi
@@ -49,6 +58,7 @@ service:
       exporters: [logging, otlp/elastic, prometheus]
     logs:
       receivers: [otlp]
-      # processors: [batch]
-      exporters: [logging, otlp/elastic]  # Отправка в APM Server вместо прямого в ES
+      processors: [batch]
+      # exporters: [logging, otlp/elastic]  # Отправка в APM Server вместо прямого в ES
+      exporters: [logging, otlp/elastic, elasticsearch/logs]  # Отправка в APM Server вместо прямого в ES
       # exporters: [elasticsearch]

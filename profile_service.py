@@ -1,3 +1,8 @@
+from fastapi import FastAPI, HTTPException
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import Column, Integer, String, select
+import asyncio
 # main.py
 import logging
 from fastapi import FastAPI
@@ -15,12 +20,13 @@ from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
 app = FastAPI()
 
 # Конфигурация ресурсов
 resource = Resource.create({
-    SERVICE_NAME: "fastapi-service",
+    SERVICE_NAME: "fastapi-profile",
     SERVICE_VERSION: "1.0.0",
     "environment": "production"
 })
@@ -34,9 +40,9 @@ metric_provider = MeterProvider(
     metric_readers=[metric_reader]
 )
 metrics.set_meter_provider(metric_provider)
-
+tracer_provider = TracerProvider(resource=resource)
 # Настройка трейсов
-trace.set_tracer_provider(TracerProvider(resource=resource))
+trace.set_tracer_provider(tracer_provider)
 trace.get_tracer_provider().add_span_processor(
     BatchSpanProcessor(OTLPSpanExporter())
 )
@@ -60,24 +66,53 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] trace_id=%(trace_id)s span_id=%(span_id)s - %(message)s'
 )
 
+DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost/demo"
+
+app = FastAPI()
+
 # Инструментация FastAPI
-FastAPIInstrumentor.instrument_app(app)
 
+Base = declarative_base()
+engine = create_async_engine(DATABASE_URL, echo=True)
+AsyncSessionLocal = sessionmaker(
+    bind=engine, 
+    class_=AsyncSession,
+    expire_on_commit=False,
+    future=True
+)
+SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
+FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer_provider, meter_provider=metric_provider)
 
-@app.get("/")
-async def root():
-    logging.error("Handling root request")
-    return {"message": "Hello World"}
+class Profile(Base):
+    __tablename__ = "profiles"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(50))
+    email = Column(String(100))
+    bio = Column(String(500))
 
+@app.on_event("startup")
+async def startup_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-meter = metrics.get_meter(__name__)
-custom_counter = meter.create_counter("custom_counter")
+@app.get("/profile/{profile_id}")
+async def read_profile(profile_id: int):
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Profile).where(Profile.id == profile_id)
+        )
+        profile = result.scalars().first()
+        
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        
+        return {
+            "id": profile.id,
+            "name": profile.name,
+            "email": profile.email,
+            "bio": profile.bio
+        }
 
-
-@app.get("/metrics")
-async def get_metrics():
-    logging.info("Запрос метрик")
-    tracer = trace.get_tracer(__name__)
-    with tracer.start_as_current_span("test_span"):
-        custom_counter.add(1, attributes={"endpoint": "/metrics"})
-    return {"status": "Метрика записана"}
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001, loop="asyncio")

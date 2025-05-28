@@ -55,6 +55,17 @@ services:
         condition: service_healthy
     networks:
       - otel-net
+  # filebeat:
+  #   image: elastic/filebeat:7.17.9
+  #   depends_on:
+  #     - elasticsearch
+  #     - apm-server
+  #   volumes:
+  #     - ./filebeat.yml:/usr/share/filebeat/filebeat.yml
+  #     - /var/lib/docker/containers:/var/lib/docker/containers:ro
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro
+  #   networks:
+  #     - otel-net
   kibana:
     image: kibana:7.17.9
     ports:
