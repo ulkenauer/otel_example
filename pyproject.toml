@@ -1,0 +1,23 @@
+[project]
+name = "otel-example"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12.7"
+dependencies = [
+    "aiosignal>=1.4.0",
+    "alembic>=1.17.0",
+    "asyncpg>=0.30.0",
+    "fastapi>=0.120.0",
+    "greenlet>=3.2.4",
+    "httpx>=0.28.1",
+    "opentelemetry-distro>=0.59b0",
+    "opentelemetry-exporter-otlp>=1.38.0",
+    "opentelemetry-instrumentation-fastapi>=0.59b0",
+    "opentelemetry-instrumentation-httpx>=0.59b0",
+    "opentelemetry-instrumentation-logging>=0.59b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.59b0",
+    "opentelemetry-sdk>=1.38.0",
+    "sqlalchemy>=2.0.44",
+    "uvicorn>=0.38.0",
+]
